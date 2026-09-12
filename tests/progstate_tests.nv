@@ -1,0 +1,212 @@
+// progstate_tests.nv — the arithmetic a bar is, asserted without
+// waiting for it.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: progress-nv.<module>.<fn>`.
+// That is the expected result until the bodies land.
+//
+// THIS FILE IS THE ARGUMENT FOR PASSING THE INSTANT.  "After one second
+// and 100 of 1000 items, nine seconds remain" is a statement about two
+// integers and two floats, and every case below is written that way.
+// In indicatif or tqdm the same statement can only be checked by
+// sleeping, which is why nobody checks it.
+
+use std.test
+use std.list
+use htdur
+use progstate
+
+// A bar one second in, a tenth done.
+fn tenth_done() -> ProgState
+    progstate.set_position(progstate.start(1000, 0.0), 100, 1.0)
+
+@test
+fn test_the_estimate_is_arithmetic_and_this_test_takes_no_time() [io]
+    let st = tenth_done()
+
+    test.case("a tenth done")
+    test.assert(progstate.fraction(st) > 0.09)
+    test.assert(progstate.fraction(st) < 0.11)
+
+    test.case("nine hundred remain")
+    test.assert(progstate.remaining(st) == 900)
+
+    test.case("one second elapsed")
+    test.assert(progstate.elapsed(st, 1.0) == 1.0)
+
+    test.case("and about nine seconds to go")
+    match progstate.eta(st, 1.0)
+        None       => test.assert(false)
+        Some(secs) =>
+            test.assert(secs > 8.0)
+            test.assert(secs < 10.0)
+
+@test
+fn test_there_is_no_estimate_before_there_is_one() [io]
+    // indicatif's habit of estimating from a single sample is where
+    // "17 hours remaining" on a five-second task comes from.
+    test.case("nothing has finished yet")
+    match progstate.eta(progstate.start(1000, 0.0), 0.5)
+        Some(_) => test.assert(false)
+        None    => test.assert(true)
+
+    test.case("and the predicate agrees")
+    test.assert(progstate.has_eta(progstate.start(1000, 0.0), 0.5) == false)
+
+    test.case("a spinner never has one, because there is no length")
+    let spun = progstate.advance(progstate.start_spinner(0.0), 10, 1.0)
+    match progstate.eta(spun, 1.0)
+        Some(_) => test.assert(false)
+        None    => test.assert(true)
+
+@test
+fn test_a_spinner_is_the_same_type_with_no_length() [io]
+    let spun = progstate.start_spinner(0.0)
+
+    test.case("no length")
+    test.assert(progstate.has_length(spun) == false)
+
+    test.case("a bar has one")
+    test.assert(progstate.has_length(progstate.start(100, 0.0)))
+
+    test.case("and a fraction of zero rather than a division by zero")
+    test.assert(progstate.fraction(spun) == 0.0)
+
+    test.case("remaining is not a number it could invent")
+    test.assert(progstate.remaining(spun) < 0)
+
+@test
+fn test_a_length_that_arrives_late_turns_a_spinner_into_a_bar() [io]
+    // A download whose Content-Length arrives after the first chunk, an
+    // archive whose entry count is known after the directory is read.
+    let spun = progstate.advance(progstate.start_spinner(0.0), 100, 1.0)
+    let known = progstate.with_length(spun, 1000)
+
+    test.case("it now has a length")
+    test.assert(progstate.has_length(known))
+
+    test.case("and the position it already had")
+    test.assert(known.position == 100)
+
+@test
+fn test_a_position_past_an_estimated_length_is_not_an_error() [io]
+    // A length is usually an estimate, and a bar that clamped the
+    // position would report 100% for the last third of a run.
+    let over = progstate.set_position(progstate.start(1000, 0.0), 1200, 1.0)
+
+    test.case("the position is kept")
+    test.assert(over.position == 1200)
+
+    test.case("and the fraction is clamped, because a bar cannot draw past its end")
+    test.assert(progstate.fraction(over) == 1.0)
+
+@test
+fn test_finishing_and_abandoning_are_different_states() [io]
+    // A bar that stopped at 70% and a bar that completed should not
+    // render the same, and a caller with only a boolean would keep the
+    // difference somewhere else.
+    let half = progstate.set_position(progstate.start(1000, 0.0), 500, 1.0)
+
+    test.case("finishing moves the position to the length")
+    test.assert(progstate.finish(half, 2.0).position == 1000)
+
+    test.case("abandoning leaves it where it was")
+    test.assert(progstate.abandon(half, 2.0).position == 500)
+
+    test.case("and neither is running")
+    test.assert(progstate.is_running(progstate.finish(half, 2.0)) == false)
+    test.assert(progstate.is_running(progstate.abandon(half, 2.0)) == false)
+
+    test.case("while the one before them was")
+    test.assert(progstate.is_running(half))
+
+@test
+fn test_a_finished_bars_elapsed_time_stops_growing() [io]
+    // The elapsed time of a completed step should not keep counting
+    // while the line is on the screen.
+    let done = progstate.finish(progstate.start(100, 0.0), 5.0)
+
+    test.case("five seconds, an hour later")
+    test.assert(progstate.elapsed(done, 3600.0) == 5.0)
+
+@test
+fn test_the_rate_needs_two_samples() [io]
+    // A rate from one sample is a division by zero dressed up.
+    test.case("a bar that has not moved has no rate")
+    test.assert(progstate.rate(progstate.start(1000, 0.0), 1.0) == 0.0)
+
+    test.case("one that has, does")
+    test.assert(progstate.rate(tenth_done(), 1.0) > 0.0)
+
+@test
+fn test_the_smoothing_is_a_value_and_both_rates_are_readable() [io]
+    // "The average was 4 MiB/s and the current rate is 400 KiB/s" is
+    // the sentence a person wants at the end of a slow download.
+    let uniform = progstate.with_smoothing(tenth_done(),
+                                           progstate.uniform_smoothing())
+
+    test.case("the default smooths over a window")
+    test.assert(progstate.smoothing().window > 0)
+
+    test.case("uniform smoothing has none")
+    test.assert(progstate.uniform_smoothing().window == 0)
+
+    test.case("and the mean rate is available whatever the smoothing")
+    test.assert(progstate.mean_rate(uniform, 1.0) > 0.0)
+
+@test
+fn test_advancing_records_a_sample_and_trims_the_window() [io]
+    var st = progstate.start(1000, 0.0)
+    st = progstate.advance(st, 10, 0.1)
+    st = progstate.advance(st, 10, 0.2)
+
+    test.case("the position moved twice")
+    test.assert(st.position == 20)
+
+    test.case("samples were recorded")
+    test.assert(list.len(st.samples) > 0)
+
+    test.case("and the newest is the last")
+    match progstate.last_sample(st)
+        None    => test.assert(false)
+        Some(s) => test.assert(s.position == 20)
+
+    test.case("the window never grows past the smoothing's")
+    test.assert(list.len(st.samples) <= progstate.smoothing().window)
+
+@test
+fn test_the_unit_and_the_message_travel_with_the_state() [io]
+    let st = progstate.with_message(progstate.with_unit(progstate.start(1000, 0.0),
+                                                        ProgBytes),
+                                    "downloading humantime-nv")
+
+    test.case("the message is kept whole — truncation is the renderer's")
+    test.assert(st.message == "downloading humantime-nv")
+
+    test.case("and the unit came along")
+    test.assert(progstate.has_length(st))
+
+@test
+fn test_the_duration_forms_are_beside_the_float_ones() [io]
+    // `eta_duration` answers a duration and not an optional: a `@value`
+    // struct cannot be a `?T` payload, so `eta` carries the `None` and
+    // `has_eta` is the predicate.
+    let st = tenth_done()
+
+    test.case("the elapsed duration agrees with the float")
+    test.assert(htdur.as_secs(progstate.elapsed_duration(st, 5.0)) == 5)
+
+    test.case("the eta duration is a duration")
+    test.assert(htdur.as_secs(progstate.eta_duration(st, 1.0)) > 0)
+
+    test.case("and it is zero where there is no estimate")
+    let fresh = progstate.start(1000, 0.0)
+    test.assert(htdur.as_secs(progstate.eta_duration(fresh, 0.5)) == 0)
+
+@test
+fn test_the_finish_instant_is_the_eta_plus_now() [io]
+    // So a caller reporting a wall-clock time does not add them up
+    // itself and get it wrong at a midnight boundary.
+    match progstate.eta_at(tenth_done(), 1.0)
+        None     => test.assert(false)
+        Some(at) => test.assert(at > 1.0)

@@ -1,0 +1,228 @@
+// progstyle.nv — the glyphs, and the spinner as a function of a tick.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// A SPINNER FRAME IS A FUNCTION OF THE INSTANT, not of a counter the
+// spinner keeps.  `spinner_frame(style, at)` is `[]` and total, which
+// means two bars drawn in one frame are in step, a spinner drawn from a
+// replayed log looks the way it looked, and nothing here holds mutable
+// state.  Every implementation that keeps an index instead has the same
+// two bugs: a redraw that skips a frame when a tick is dropped, and two
+// spinners on one screen that drift apart.
+//
+// THE GLYPHS ARE A VALUE, and the reason is not decoration.  A terminal
+// that cannot draw `█` draws a replacement character, and a bar made of
+// replacement characters is worse than one made of `#` — so `ascii()`
+// is a style rather than a flag, and a caller who knows their terminal
+// picks.  There is no detection here: this package never asks the
+// terminal anything.
+//
+// THE PARTIAL BLOCK IS THE POINT OF `filled_parts`.  A bar 40 cells
+// wide over a thousand items moves one cell every 25 items; with the
+// eight partial blocks it moves visibly every three.  A style with one
+// part is a bar that looks stuck, which is what an ASCII bar is, and
+// saying so in the type is better than discovering it.
+
+// How a bar is drawn.
+pub struct ProgStyle
+    // The character the filled part of the bar is made of.
+    filled: Str
+    // The character the empty part is made of.
+    empty: Str
+    // The partial characters between empty and filled, from the
+    // narrowest up, NOT including either end.  Seven of them for the
+    // Unicode blocks; none at all for ASCII.
+    partials: [Str]
+    // Written before the bar and after it.  Empty strings for a bar
+    // with no ends, which is what a bar that shares a line with a
+    // message usually wants.
+    open: Str
+    close: Str
+    // The spinner's frames, in order.
+    spinner: [Str]
+    // How long one spinner frame lasts, in seconds.
+    spinner_period: Float
+
+// The default style: Unicode blocks, no brackets, the braille spinner.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.style().filled)
+// ```
+pub fn style() -> ProgStyle []
+    todo("progress-nv.progstyle.style")
+
+// A style made of ASCII only: `#` and `-`, `[` and `]`, and the
+// four-frame `/-\|` spinner.
+//
+// For a terminal or a log that cannot carry anything else. It has no
+// partial blocks, so the bar moves one whole cell at a time — which is
+// the cost, stated rather than discovered.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.ascii().filled)
+// ```
+pub fn ascii() -> ProgStyle []
+    todo("progress-nv.progstyle.ascii")
+
+// A style with no bar at all: the spinner and nothing else.
+//
+// ```novo
+// use progstyle
+// use std.list
+//
+// fn main() [io]
+//     println("${list.len(progstyle.spinner_only().partials)}")
+// ```
+pub fn spinner_only() -> ProgStyle []
+    todo("progress-nv.progstyle.spinner_only")
+
+// The style with different bar characters.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.with_chars(progstyle.style(), "=", ".").filled)
+// ```
+pub fn with_chars(s: ProgStyle, filled: Str, empty: Str) -> ProgStyle []
+    todo("progress-nv.progstyle.with_chars")
+
+// The style with different partial characters.
+//
+// ```novo
+// use progstyle
+// use std.list
+//
+// fn main() [io]
+//     println("${list.len(progstyle.with_partials(progstyle.style(), []).partials)}")
+// ```
+pub fn with_partials(s: ProgStyle, partials: [Str]) -> ProgStyle []
+    todo("progress-nv.progstyle.with_partials")
+
+// The style with brackets around the bar.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.with_ends(progstyle.style(), "[", "]").open)
+// ```
+pub fn with_ends(s: ProgStyle, open: Str, close: Str) -> ProgStyle []
+    todo("progress-nv.progstyle.with_ends")
+
+// The style with different spinner frames.
+//
+// ```novo
+// use progstyle
+// use std.list
+//
+// fn main() [io]
+//     let s = progstyle.with_spinner(progstyle.style(), [".", "o", "O"], 0.2)
+//     println("${list.len(s.spinner)}")
+// ```
+pub fn with_spinner(s: ProgStyle, frames: [Str], period: Float) -> ProgStyle []
+    todo("progress-nv.progstyle.with_spinner")
+
+// The bar, `columns` cells wide, at this fraction.
+//
+// `[]`: the filled run, the one partial cell if the style has partials,
+// then the empty run — `open` and `close` included.  A fraction outside
+// 0.0 to 1.0 is clamped, because a length that was an estimate is
+// normal and a bar that drew past its own end is not.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.bar(progstyle.style(), 20, 0.25))
+// ```
+pub fn bar(s: ProgStyle, columns: Int, fraction: Float) -> Str []
+    todo("progress-nv.progstyle.bar")
+
+// The bar, into a caller's buffer.
+//
+// ```novo
+// use progstyle
+// use std.list
+//
+// fn main() [io]
+//     println("${list.len(progstyle.bar_into([], progstyle.style(), 20, 0.25))}")
+// ```
+pub fn bar_into(out: [u8], s: ProgStyle, columns: Int, fraction: Float) -> [u8] []
+    todo("progress-nv.progstyle.bar_into")
+
+// How many distinct positions a bar of this width can show.
+//
+// `columns * (partials + 1)`.  Published because it is the answer to
+// "why does my bar look stuck": an ASCII bar 20 cells wide over 10,000
+// items redraws identically for 500 of them.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println("${progstyle.filled_parts(progstyle.ascii(), 20)}")
+// ```
+pub fn filled_parts(s: ProgStyle, columns: Int) -> Int []
+    todo("progress-nv.progstyle.filled_parts")
+
+// The spinner's frame at this instant.
+//
+// A function of the instant and the period — no counter, no state — so
+// two spinners drawn in one frame are in step and a replay looks the
+// way the run looked.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.spinner_frame(progstyle.style(), 1.5))
+// ```
+pub fn spinner_frame(s: ProgStyle, at: Float) -> Str []
+    todo("progress-nv.progstyle.spinner_frame")
+
+// The frame a finished bar's spinner position shows: a tick.
+//
+// A finished line keeps its shape — the spinner column does not
+// collapse — so a list of completed steps stays aligned with the ones
+// still running.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.finished_frame(progstyle.style()))
+// ```
+pub fn finished_frame(s: ProgStyle) -> Str []
+    todo("progress-nv.progstyle.finished_frame")
+
+// The frame an abandoned bar's spinner position shows: a cross.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println(progstyle.abandoned_frame(progstyle.style()))
+// ```
+pub fn abandoned_frame(s: ProgStyle) -> Str []
+    todo("progress-nv.progstyle.abandoned_frame")
+
+// Whether every glyph in the style is ASCII.
+//
+// The predicate a caller writing to a log file rather than a terminal
+// asks before it picks a style.
+//
+// ```novo
+// use progstyle
+//
+// fn main() [io]
+//     println("${progstyle.is_ascii(progstyle.ascii())}")
+// ```
+pub fn is_ascii(s: ProgStyle) -> Bool []
+    todo("progress-nv.progstyle.is_ascii")

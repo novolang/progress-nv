@@ -1,0 +1,362 @@
+// progtmpl.nv — the line, as a template, rendered into a buffer.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// A TEMPLATE IS PARSED ONCE AND RENDERED MANY TIMES.  `parse` answers a
+// `ProgTemplate` — a list of tokens — and `render_into` walks it.  A bar
+// redrawn ten times a second for a minute renders six hundred times off
+// one parse, and a parse per frame is where a progress bar's own cost
+// shows up in a profile.
+//
+// A TEMPLATE THAT DOES NOT PARSE IS AN ERROR AT PARSE TIME, with the
+// offset.  indicatif's `{bytes/total_bytes}` and tqdm's `{n_fmt}` are
+// both silently dropped when misspelled, which means a person's bar is
+// missing a field and nothing says why.
+//
+// EXACTLY ONE FIELD MAY EXPAND, and that is what makes the layout
+// solvable.  `{bar}` and `{msg}` take what is left after everything
+// else is measured; every other field has a width that is a function of
+// its value.  Two expanding fields would need a policy nobody agrees
+// with, so two is `ProgTooManyFlexible` and the message says which
+// two.
+//
+// WIDTH IS MEASURED IN CELLS.  `世界` is six bytes, two codepoints and
+// four cells, and a bar sized by either of the first two does not line
+// up.  `textwrap-nv`'s `WrapWidth`, fed by `unicode-nv`'s `char_width`,
+// is the rule — the same one table-nv uses, so a bar and a table on the
+// same terminal cannot come to different answers.  An ANSI escape in a
+// message costs no width, and that is ansi-nv's state machine rather
+// than a regular expression.
+
+use widths
+use progstate
+use progstyle
+
+// One piece of a template line.
+pub enum ProgToken
+    // Text written as it is.
+    ProgLiteral(text: Str)
+    // The bar itself: the one field that expands, unless `{msg}` is
+    // present and marked flexible instead.
+    ProgBar
+    // The spinner frame for this tick.
+    ProgSpinnerToken
+    // `position` in the state's unit.
+    ProgPos
+    // `length` in the state's unit, or `?` when it is unknown.
+    ProgLen
+    // `position/length`, which is one token because the separator
+    // should not be a literal somebody spells differently.
+    ProgPosOfLen
+    // The percentage, no decimals.
+    ProgPercent
+    // Elapsed, in humantime-nv's words.
+    ProgElapsed
+    // The estimate, in humantime-nv's words, or `--` when there is
+    // none.
+    ProgEta
+    // Units per second, smoothed.
+    ProgRate
+    // The state's message, truncated to what is left.
+    ProgMsg
+    // A fixed number of spaces, for aligning columns between bars.
+    ProgPad(columns: Int)
+
+// A parsed template.
+pub struct ProgTemplate
+    tokens: [ProgToken]
+    // Which token expands, by index, or `0 - 1` when none does — a
+    // template of fixed fields is legal and renders to a line shorter
+    // than the terminal.
+    flexible: Int
+
+// What a template can get wrong.
+pub enum ProgTmplError
+    // A `{` with no `}`, at this byte offset.
+    ProgUnclosedField(at: Int)
+    // A field name this package does not know, with the name, so the
+    // message can suggest the nearest one it does.
+    ProgUnknownField(at: Int, name: Str)
+    // Two fields that both want the leftover width.
+    ProgTooManyFlexible(first: Str, second: Str)
+
+// The sentence a `Result<_, ProgTmplError>` carries.
+//
+// SPEC § 3.4 admits a type as a `Result`'s error type only when it
+// implements `Error`, so this impl is what lets `parse` answer its own
+// refusal.
+//
+// Every message carries the byte offset, because a template is written
+// as one string and "somewhere in it" is not a place a person can look.
+//
+// ```novo
+// use progtmpl
+//
+// fn main() [io]
+//     match progtmpl.parse("{bar} {nonesuch}")
+//         Ok(_)  => println("parsed")
+//         Err(e) => println(e.message())
+// ```
+impl Error for ProgTmplError
+    // Panics with `not implemented` until the bodies land.
+    fn message(self) -> Str
+        todo("progress-nv.progtmpl.ProgTmplError.message")
+
+// The default bar template.
+//
+// `{spinner} {msg} {bar} {pos}/{len} ({percent}%) {eta}` — indicatif's
+// arrangement, because it is the one a person's eye is trained on.
+//
+// ```novo
+// use progtmpl
+//
+// fn main() [io]
+//     println(progtmpl.default_template_text())
+// ```
+pub fn default_template_text() -> Str []
+    todo("progress-nv.progtmpl.default_template_text")
+
+// The default spinner template, for a bar with no length.
+//
+// `{spinner} {msg} {pos} ({elapsed})`: no bar, no percentage, no
+// estimate, because none of them has an answer.
+//
+// ```novo
+// use progtmpl
+//
+// fn main() [io]
+//     println(progtmpl.default_spinner_text())
+// ```
+pub fn default_spinner_text() -> Str []
+    todo("progress-nv.progtmpl.default_spinner_text")
+
+// The download template `novo pkg add` would use.
+//
+// `{spinner} {msg:24} {bytes}/{total_bytes} {bar} {rate} {eta}` — the
+// name of the package being fetched in a fixed column so a list of them
+// aligns, and the bytes before the bar so the numbers do not move when
+// the bar does.
+//
+// ```novo
+// use progtmpl
+//
+// fn main() [io]
+//     println(progtmpl.download_template_text())
+// ```
+pub fn download_template_text() -> Str []
+    todo("progress-nv.progtmpl.download_template_text")
+
+// Parse a template.
+//
+// Once, at the top of a run; `render_into` is what the loop calls.
+//
+// ```novo
+// use progtmpl
+// use std.list
+//
+// fn main() [io]
+//     match progtmpl.parse("{bar} {percent}%")
+//         Err(e) => println(e.message())
+//         Ok(t)  => println("${list.len(t.tokens)}")
+// ```
+pub fn parse(text: Str) -> Result<ProgTemplate, ProgTmplError> []
+    todo("progress-nv.progtmpl.parse")
+
+// The default template, parsed.
+//
+// ```novo
+// use progtmpl
+// use std.list
+//
+// fn main() [io]
+//     println("${list.len(progtmpl.default_template().tokens)}")
+// ```
+pub fn default_template() -> ProgTemplate []
+    todo("progress-nv.progtmpl.default_template")
+
+// The field names this package knows, for a message that suggests one.
+//
+// ```novo
+// use progtmpl
+// use std.list
+//
+// fn main() [io]
+//     println("${list.len(progtmpl.field_names())}")
+// ```
+pub fn field_names() -> [Str] []
+    todo("progress-nv.progtmpl.field_names")
+
+// The rendered line, into a caller's buffer.
+//
+// `[]`, and this is the function the whole design exists for: the
+// state, the template, the total width and the width rule in — bytes
+// out. No clock, no terminal, no writer.
+//
+// `columns` is the terminal's width, which the caller passes; see the
+// README for why this package never asks for it.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progstyle
+// use std.list
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     let out = progtmpl.render_into([], progtmpl.default_template(), st,
+//                                    progstyle.style(), 80,
+//                                    progtmpl.width_rule(), 1.0)
+//     println("${list.len(out)}")
+// ```
+pub fn render_into(out: [u8], t: ProgTemplate, st: progstate.ProgState, style: progstyle.ProgStyle,
+                   columns: Int, w: widths.WrapWidth, at: Float) -> [u8] []
+    todo("progress-nv.progtmpl.render_into")
+
+// The same line, as text.
+//
+// The convenience over `render_into` for a caller that wants a `Str` —
+// a log line, a test assertion.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progstyle
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     println(progtmpl.render(progtmpl.default_template(), st, progstyle.style(),
+//                             80, progtmpl.width_rule(), 1.0))
+// ```
+pub fn render(t: ProgTemplate, st: progstate.ProgState, style: progstyle.ProgStyle, columns: Int,
+              w: widths.WrapWidth, at: Float) -> Str []
+    todo("progress-nv.progtmpl.render")
+
+// The width rule: unicode-nv's `char_width`, as textwrap-nv's
+// `WrapWidth`.
+//
+// One rule shared with table-nv, so a bar and a table on the same
+// terminal cannot come to different answers, and no signature in either
+// package changed to make it so.
+//
+// ```novo
+// use progtmpl
+// use widths
+//
+// fn main() [io]
+//     let cells = widths.str_width(progtmpl.width_rule(), "世界")
+//     println("${cells}")
+// ```
+pub fn width_rule() -> widths.WrapWidth []
+    todo("progress-nv.progtmpl.width_rule")
+
+// The width rule for a terminal that draws ambiguous-width characters
+// wide.
+//
+// East Asian Ambiguous is one cell on most terminals and two on some,
+// and there is no way to ask; the caller who knows their terminal picks.
+//
+// ```novo
+// use progtmpl
+// use widths
+//
+// fn main() [io]
+//     let cells = widths.str_width(progtmpl.width_rule_cjk(), "世界")
+//     println("${cells}")
+// ```
+pub fn width_rule_cjk() -> widths.WrapWidth []
+    todo("progress-nv.progtmpl.width_rule_cjk")
+
+// How wide the line would be with the flexible field given nothing.
+//
+// The measurement the layout is solved from, published because "the
+// terminal is too narrow for this template" is a real answer and a
+// caller deserves to be able to ask before it renders.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progstyle
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     println("${progtmpl.fixed_width(progtmpl.default_template(), st, progstyle.style(), progtmpl.width_rule(), 1.0)}")
+// ```
+pub fn fixed_width(t: ProgTemplate, st: progstate.ProgState, style: progstyle.ProgStyle,
+                   w: widths.WrapWidth, at: Float) -> Int []
+    todo("progress-nv.progtmpl.fixed_width")
+
+// How many columns the flexible field gets at this width.
+//
+// `0` when the fixed fields already fill the line, which is the case a
+// narrow terminal produces and the reason the bar is not allowed to go
+// negative.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progstyle
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     println("${progtmpl.flexible_width(progtmpl.default_template(), st, progstyle.style(), 80, progtmpl.width_rule(), 1.0)}")
+// ```
+pub fn flexible_width(t: ProgTemplate, st: progstate.ProgState, style: progstyle.ProgStyle,
+                      columns: Int, w: widths.WrapWidth, at: Float) -> Int []
+    todo("progress-nv.progtmpl.flexible_width")
+
+// One token rendered on its own, at its natural width.
+//
+// The unit of the whole module, published because every interesting
+// formatting question — does a zero-rate render `0/s` or `--`, does a
+// missing length render `?` — is a test of one token.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progstyle
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     println(progtmpl.render_token(ProgPercent, st, progstyle.style(), 1.0))
+// ```
+pub fn render_token(tok: ProgToken, st: progstate.ProgState, style: progstyle.ProgStyle,
+                    at: Float) -> Str []
+    todo("progress-nv.progtmpl.render_token")
+
+// A count in the state's unit: `1,024` for items, `1.0 KiB` for bytes.
+//
+// ```novo
+// use progtmpl
+//
+// fn main() [io]
+//     println(progtmpl.format_count(1024, ProgBytes))
+// ```
+pub fn format_count(n: Int, unit: ProgUnit) -> Str []
+    todo("progress-nv.progtmpl.format_count")
+
+// A rate in the state's unit: `1.4 MiB/s`, `1,200 rows/s`.
+//
+// `--` for a rate of zero, because `0/s` on a bar that has not started
+// reads as a stall.
+//
+// ```novo
+// use progtmpl
+//
+// fn main() [io]
+//     println(progtmpl.format_rate(1048576.0, ProgBytes))
+// ```
+pub fn format_rate(per_second: Float, unit: ProgUnit) -> Str []
+    todo("progress-nv.progtmpl.format_rate")
+
+// A duration in humantime-nv's words, or `--`.
+//
+// The one place this package formats a time, and it delegates.
+//
+// ```novo
+// use progtmpl
+//
+// fn main() [io]
+//     println(progtmpl.format_seconds(150.0))
+// ```
+pub fn format_seconds(secs: Float) -> Str []
+    todo("progress-nv.progtmpl.format_seconds")

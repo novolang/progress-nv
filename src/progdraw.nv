@@ -1,0 +1,381 @@
+// progdraw.nv — the writer, the clock, and the two things a library
+// must not decide.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// A LIBRARY DOES NOT PRINT.  Every function here that emits bytes takes
+// the writer: `fn draw_to<W: Write[e]>(w: W, …) -> ?IoError [e]`.  The
+// bound binds the trait's effect parameter and the clause uses it, so
+// the call costs whatever the caller's writer costs — `[io]` for
+// stderr, nothing at all for a buffer — and this package spends nothing
+// of its own.  A bar drawn into a buffer inside a pure function is
+// therefore an ordinary thing to do, which is how the whole of this
+// package's suite asserts what it draws.
+//
+// TO STDERR, NOT STDOUT, is the convention and the README says so, but
+// it is a convention and not a rule this package can enforce: the
+// writer is the caller's.  What this module does is make the right
+// thing easy and the wrong thing visible.
+//
+// THE TERMINAL WIDTH ARRIVES AS AN ARGUMENT.  This package never asks
+// the terminal anything.  A program that wants the real width reads it
+// once, at the top, from wherever it gets it, and passes it down; a
+// program writing to a file passes the width it wants its log lines to
+// be.  The alternative — a library that queries the terminal — makes
+// every render `[io]`, makes the output untestable, and gets the wrong
+// answer inside a pipe.
+//
+// A NON-TTY WRITER GETS MILESTONES, NOT ESCAPE SEQUENCES.  `ProgPlain`
+// writes one line when a threshold is crossed and nothing in between,
+// because a redraw loop into a log file produces a hundred thousand
+// lines of carriage returns, which is the single commonest complaint
+// about every progress bar ever shipped.  The mode is a value the
+// caller sets, for the same reason the width is: this package cannot
+// ask, and a caller that knows should not be overruled.
+//
+// THE REDRAW RATE IS A VALUE AND THE CLOCK IS THE CALLER'S.
+// `should_redraw(policy, last, now)` is `[]`: a bar advanced ten
+// thousand times a second is redrawn twenty times, and which ten
+// thousand is arithmetic a test can pin.
+
+use widths
+use progstate
+use progstyle
+use progtmpl
+
+// Where the bytes are going, as far as the drawing is concerned.
+pub enum ProgMode
+    // A terminal: the line is redrawn in place with a carriage return
+    // and an erase, and a multi-bar moves the cursor.
+    ProgTty
+    // Anything else — a file, a pipe, a CI log.  One line per
+    // milestone, no escape sequences, no carriage returns.
+    ProgPlain
+    // Nothing at all.  A `--quiet` flag, published as a mode rather
+    // than left to the caller to branch around, so that the call sites
+    // do not grow an `if`.
+    ProgSilent
+
+// Everything the drawing needs that is not the state.
+pub struct ProgTerm
+    mode: ProgMode
+    // The width to draw to, in cells.  The caller's; see the module
+    // comment.
+    columns: Int
+    style: progstyle.ProgStyle
+    // How the message is measured and truncated.
+    width_rule: widths.WrapWidth
+    // In `ProgPlain`, how much progress must pass before another line
+    // is written: `0.1` for a line every ten per cent.
+    milestone: Float
+
+// When a redraw is worth doing.
+pub struct ProgTick
+    // The shortest time between two redraws, in seconds.  `0.05` —
+    // twenty a second — which is fast enough to look continuous and
+    // slow enough that the drawing is not the workload.
+    min_interval: Float
+    // Redraw anyway when the bar has moved this far since the last
+    // one, whatever the interval says.  Stops a fast, short run from
+    // drawing once at 0% and once at 100%.
+    min_fraction: Float
+    // Always redraw when the phase changed.  A finish or an abandon is
+    // the one frame a person definitely needs to see.
+    always_on_phase_change: Bool
+
+// The default terminal: `ProgTty`, 80 columns, the default style, the
+// Unicode width rule, milestones every ten per cent.
+//
+// 80 columns because a default has to be something and a line that is
+// too short is a line that still reads.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     println("${progdraw.term().columns}")
+// ```
+pub fn term() -> ProgTerm []
+    todo("progress-nv.progdraw.term")
+
+// A terminal of a given width, in TTY mode.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     println("${progdraw.term_of(120).columns}")
+// ```
+pub fn term_of(columns: Int) -> ProgTerm []
+    todo("progress-nv.progdraw.term_of")
+
+// A plain writer: no escape sequences, one line per milestone.
+//
+// What a program writing to a log file or a continuous-integration
+// console passes.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     println("${progdraw.plain(100).milestone}")
+// ```
+pub fn plain(columns: Int) -> ProgTerm []
+    todo("progress-nv.progdraw.plain")
+
+// A silent writer: nothing is drawn at all.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     println("${progdraw.silent().columns}")
+// ```
+pub fn silent() -> ProgTerm []
+    todo("progress-nv.progdraw.silent")
+
+// The terminal with a different style.
+//
+// ```novo
+// use progdraw
+// use progstyle
+//
+// fn main() [io]
+//     println(progdraw.with_style(progdraw.term(), progstyle.ascii()).style.filled)
+// ```
+pub fn with_style(t: ProgTerm, s: progstyle.ProgStyle) -> ProgTerm []
+    todo("progress-nv.progdraw.with_style")
+
+// The terminal with a different width rule.
+//
+// ```novo
+// use progdraw
+// use progtmpl
+//
+// fn main() [io]
+//     let t = progdraw.with_width_rule(progdraw.term(), progtmpl.width_rule_cjk())
+//     println("${t.columns}")
+// ```
+pub fn with_width_rule(t: ProgTerm, w: widths.WrapWidth) -> ProgTerm []
+    todo("progress-nv.progdraw.with_width_rule")
+
+// The terminal with a different milestone step.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     println("${progdraw.with_milestone(progdraw.plain(100), 0.25).milestone}")
+// ```
+pub fn with_milestone(t: ProgTerm, fraction: Float) -> ProgTerm []
+    todo("progress-nv.progdraw.with_milestone")
+
+// The default redraw policy: twenty a second, or a one-per-cent move,
+// and always on a phase change.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     println("${progdraw.tick().min_interval}")
+// ```
+pub fn tick() -> ProgTick []
+    todo("progress-nv.progdraw.tick")
+
+// A redraw policy at a given rate, in frames per second.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     println("${progdraw.tick_at(4.0).min_interval}")
+// ```
+pub fn tick_at(per_second: Float) -> ProgTick []
+    todo("progress-nv.progdraw.tick_at")
+
+// Whether a redraw is worth doing now.
+//
+// `[]`, and the whole throttle: the policy, the previous state, the new
+// state and the instant in — a boolean out.  A bar advanced ten
+// thousand times a second is redrawn twenty times, and which ten
+// thousand is arithmetic a test can pin.
+//
+// ```novo
+// use progstate
+// use progdraw
+//
+// fn main() [io]
+//     let a = progstate.start(1000, 0.0)
+//     let b = progstate.advance(a, 1, 0.001)
+//     println("${progdraw.should_redraw(progdraw.tick(), a, b, 0.001)}")
+// ```
+pub fn should_redraw(policy: ProgTick, previous: progstate.ProgState, current: progstate.ProgState,
+                     at: Float) -> Bool []
+    todo("progress-nv.progdraw.should_redraw")
+
+// Whether a plain-mode line is due.
+//
+// The `ProgPlain` half of the same question, and separate because the
+// answer is about the bar's position and not about the clock: a
+// milestone line is written when the fraction crosses a multiple of
+// `term.milestone`, however long that took.
+//
+// ```novo
+// use progstate
+// use progdraw
+//
+// fn main() [io]
+//     let a = progstate.start(1000, 0.0)
+//     let b = progstate.set_position(a, 500, 1.0)
+//     println("${progdraw.milestone_due(progdraw.plain(100), a, b)}")
+// ```
+pub fn milestone_due(t: ProgTerm, previous: progstate.ProgState,
+                     current: progstate.ProgState) -> Bool []
+    todo("progress-nv.progdraw.milestone_due")
+
+// The bytes one frame writes, into a caller's buffer.
+//
+// `[]`, and this is what every draw function is a thin wrapper over:
+// the carriage return and the erase in `ProgTty`, the bare line in
+// `ProgPlain`, nothing at all in `ProgSilent`.  Published so a test of
+// what a frame contains needs no writer, and so a caller with its own
+// output discipline — a terminal user interface that owns the screen —
+// can take the bytes and place them itself.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progdraw
+// use std.list
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     let out = progdraw.frame_into([], progdraw.term(), progtmpl.default_template(), st, 1.0)
+//     println("${list.len(out)}")
+// ```
+pub fn frame_into(out: [u8], t: ProgTerm, tmpl: progtmpl.ProgTemplate, st: progstate.ProgState,
+                  at: Float) -> [u8] []
+    todo("progress-nv.progdraw.frame_into")
+
+// Draw one frame to a writer.
+//
+// THE EFFECT-POLYMORPHIC SHAPE.  `W: Write[e]` binds the trait's effect
+// parameter and the clause uses it, so this costs what the writer costs
+// and nothing of its own: `[io]` for stderr, nothing for a buffer.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progdraw
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     let buf = Buffer.new()
+//     match progdraw.draw_to(buf, progdraw.term(), progtmpl.default_template(), st, 1.0)
+//         Some(e) => println(e.message())
+//         None    => println("drawn")
+// ```
+pub fn draw_to<W: Write[e]>(w: W, t: ProgTerm, tmpl: progtmpl.ProgTemplate, st: progstate.ProgState,
+                            at: Float) -> ?IoError [e]
+    todo("progress-nv.progdraw.draw_to")
+
+// Draw a frame only if the policy says one is due, and answer whether
+// it drew.
+//
+// The call a loop makes, and the reason the throttle is in this package
+// rather than in every caller's loop: `advance`, then this.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progdraw
+//
+// fn main() [io]
+//     let st = progstate.start(1000, 0.0)
+//     let buf = Buffer.new()
+//     match progdraw.draw_if_due(buf, progdraw.term(), progdraw.tick(),
+//                                progtmpl.default_template(), st, st, 1.0)
+//         Ok(drew) => println("${drew}")
+//         Err(e)   => println(e.message())
+// ```
+pub fn draw_if_due<W: Write[e]>(w: W, t: ProgTerm, policy: ProgTick, tmpl: progtmpl.ProgTemplate,
+                                previous: progstate.ProgState, current: progstate.ProgState,
+                                at: Float) -> Result<Bool, IoError> [e]
+    todo("progress-nv.progdraw.draw_if_due")
+
+// Write the final line and a newline, so whatever comes next starts
+// clean.
+//
+// The step every hand-rolled bar forgets, and the reason a tool's next
+// line so often lands on top of its own progress bar.  In `ProgTty` it
+// erases and writes the finished line; in `ProgPlain` it writes the
+// last milestone; in `ProgSilent` it writes nothing.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progdraw
+//
+// fn main() [io]
+//     let st = progstate.finish(progstate.start(1000, 0.0), 10.0)
+//     let buf = Buffer.new()
+//     match progdraw.finish_to(buf, progdraw.term(), progtmpl.default_template(), st, 10.0)
+//         Some(e) => println(e.message())
+//         None    => println("done")
+// ```
+pub fn finish_to<W: Write[e]>(w: W, t: ProgTerm, tmpl: progtmpl.ProgTemplate,
+                              st: progstate.ProgState, at: Float) -> ?IoError [e]
+    todo("progress-nv.progdraw.finish_to")
+
+// Erase the bar's line and leave the cursor where it started.
+//
+// For a caller that has something else to print in the middle of a run
+// — a warning, a log line — and wants it to land on a clean line rather
+// than on top of the bar.  `clear_to`, print, then draw again.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io]
+//     let buf = Buffer.new()
+//     match progdraw.clear_to(buf, progdraw.term())
+//         Some(e) => println(e.message())
+//         None    => println("cleared")
+// ```
+pub fn clear_to<W: Write[e]>(w: W, t: ProgTerm) -> ?IoError [e]
+    todo("progress-nv.progdraw.clear_to")
+
+// The bytes `clear_to` writes, into a caller's buffer.
+//
+// ```novo
+// use progdraw
+// use std.list
+//
+// fn main() [io]
+//     println("${list.len(progdraw.clear_into([], progdraw.term()))}")
+// ```
+pub fn clear_into(out: [u8], t: ProgTerm) -> [u8] []
+    todo("progress-nv.progdraw.clear_into")
+
+// The clock: seconds, as `std.time` counts them.
+//
+// **The one `[time]` function in this package, and the only reason its
+// layer is `host`.**  Everything else takes the instant as an argument.
+// A caller that already has one — a runtime with its own clock, a
+// replay, a test — never calls this, and pays no `[time]`.
+//
+// Wall time and not monotonic, because `std.time` publishes no
+// monotonic clock: a clock that steps backwards makes an elapsed time
+// negative, and `progstate.elapsed` clamps at zero rather than
+// reporting one. That is a real limitation and it is stated here rather
+// than in a comment nobody reads.
+//
+// ```novo
+// use progdraw
+//
+// fn main() [io, time]
+//     let at = progdraw.now()
+//     println("${at > 0.0}")
+// ```
+pub fn now() -> Float [time]
+    todo("progress-nv.progdraw.now")

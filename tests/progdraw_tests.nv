@@ -1,0 +1,198 @@
+// progdraw_tests.nv — the throttle, the modes, and a writer that costs
+// nothing.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: progress-nv.<module>.<fn>`.
+//
+// EVERY DRAW IN THIS FILE GOES INTO A `Buffer`, whose `Write` impl is
+// `[]`.  So the rows below are `[io]` for what `std.test` prints and
+// nothing else — which is the effect-polymorphic bound doing exactly
+// what it was added for: the same call that costs `[io]` against stderr
+// costs nothing here, and the test double is free.
+
+use std.test
+use std.str
+use std.list
+use progstate
+use progstyle
+use progtmpl
+use progdraw
+
+fn at_half() -> ProgState
+    progstate.set_position(progstate.start(1000, 0.0), 500, 1.0)
+
+@test
+fn test_the_throttle_is_arithmetic_over_two_states_and_an_instant() [io]
+    // A bar advanced ten thousand times a second is redrawn twenty
+    // times, and which ten thousand is something a test can pin.
+    let policy = progdraw.tick()
+    let a = progstate.start(1000, 0.0)
+    let soon = progstate.advance(a, 1, 0.001)
+
+    test.case("a millisecond later is too soon")
+    test.assert(progdraw.should_redraw(policy, a, soon, 0.001) == false)
+
+    test.case("a second later is not")
+    let later = progstate.advance(a, 1, 1.0)
+    test.assert(progdraw.should_redraw(policy, a, later, 1.0))
+
+@test
+fn test_a_big_move_redraws_even_inside_the_interval() [io]
+    // Otherwise a fast, short run draws once at 0% and once at 100%.
+    let policy = progdraw.tick()
+    let a = progstate.start(1000, 0.0)
+    let jumped = progstate.set_position(a, 900, 0.001)
+
+    test.case("nine tenths in a millisecond is worth a frame")
+    test.assert(progdraw.should_redraw(policy, a, jumped, 0.001))
+
+@test
+fn test_a_phase_change_always_redraws() [io]
+    // A finish or an abandon is the one frame a person definitely needs
+    // to see.
+    let a = at_half()
+
+    test.case("finishing")
+    test.assert(progdraw.should_redraw(progdraw.tick(), a,
+                                       progstate.finish(a, 1.001), 1.001))
+
+    test.case("and abandoning")
+    test.assert(progdraw.should_redraw(progdraw.tick(), a,
+                                       progstate.abandon(a, 1.001), 1.001))
+
+@test
+fn test_the_rate_is_a_value_a_caller_can_turn_down() [io]
+    test.case("the default is twenty frames a second")
+    test.assert(progdraw.tick().min_interval < 0.1)
+
+    test.case("and four a second is a longer interval")
+    test.assert(progdraw.tick_at(4.0).min_interval > progdraw.tick().min_interval)
+
+@test
+fn test_a_plain_writer_writes_on_milestones_and_not_on_the_clock() [io]
+    // The `ProgPlain` question is about the position, however long it
+    // took to get there.
+    let t = progdraw.plain(100)
+    let a = progstate.start(1000, 0.0)
+
+    test.case("a tenth crossed is a line")
+    test.assert(progdraw.milestone_due(t, a, progstate.set_position(a, 100, 60.0)))
+
+    test.case("a hundredth is not")
+    test.assert(progdraw.milestone_due(t, a, progstate.set_position(a, 10, 60.0)) == false)
+
+    test.case("and the step is a value")
+    test.assert(progdraw.with_milestone(t, 0.25).milestone == 0.25)
+
+@test
+fn test_a_tty_frame_carries_escape_sequences_and_a_plain_one_does_not() [io]
+    // A redraw loop into a log file produces a hundred thousand lines
+    // of carriage returns, which is the commonest complaint about every
+    // progress bar ever shipped.
+    let tmpl = progtmpl.default_template()
+    let st = at_half()
+
+    let tty = progdraw.frame_into([], progdraw.term(), tmpl, st, 1.0)
+    let plain = progdraw.frame_into([], progdraw.plain(80), tmpl, st, 1.0)
+
+    test.case("the TTY frame has bytes")
+    test.assert(list.len(tty) > 0)
+
+    test.case("the plain frame has bytes too")
+    test.assert(list.len(plain) > 0)
+
+    test.case("and they are not the same bytes")
+    test.assert(list.len(tty) != list.len(plain))
+
+@test
+fn test_a_silent_writer_writes_nothing_at_all() [io]
+    // Published as a mode so a `--quiet` flag does not grow an `if` at
+    // every call site.
+    let out = progdraw.frame_into([], progdraw.silent(), progtmpl.default_template(),
+                                  at_half(), 1.0)
+
+    test.case("no bytes")
+    test.assert(list.len(out) == 0)
+
+@test
+fn test_drawing_into_a_buffer_costs_nothing() [io]
+    // `impl Write[] for Buffer`, and the bound is `W: Write[e]`, so
+    // this whole test declares `[io]` for what std.test prints and
+    // nothing for the drawing.
+    let buf = Buffer.new()
+
+    test.case("it draws")
+    match progdraw.draw_to(buf, progdraw.term(), progtmpl.default_template(),
+                           at_half(), 1.0)
+        Some(e) => test.assert(str.len(e.message()) > 0)
+        None    => test.assert(true)
+
+    test.case("and something arrived in the buffer")
+    test.assert(buf.len() > 0)
+
+@test
+fn test_draw_if_due_says_whether_it_drew() [io]
+    // Which is what lets the caller keep the state it last showed, so
+    // the next comparison is against the frame on the screen rather
+    // than against the previous update.
+    let buf = Buffer.new()
+    let a = progstate.start(1000, 0.0)
+
+    test.case("too soon is Ok(false) rather than an error")
+    match progdraw.draw_if_due(buf, progdraw.term(), progdraw.tick(),
+                               progtmpl.default_template(), a,
+                               progstate.advance(a, 1, 0.001), 0.001)
+        Err(e)   => test.assert(str.len(e.message()) > 0)
+        Ok(drew) => test.assert(drew == false)
+
+@test
+fn test_finishing_leaves_the_next_line_clean() [io]
+    // The step every hand-rolled bar forgets, and the reason a tool's
+    // next line so often lands on top of its own progress bar.
+    let buf = Buffer.new()
+    let done = progstate.finish(at_half(), 2.0)
+
+    match progdraw.finish_to(buf, progdraw.term(), progtmpl.default_template(),
+                             done, 2.0)
+        Some(e) => test.assert(str.len(e.message()) > 0)
+        None    => test.assert(buf.len() > 0)
+
+@test
+fn test_clearing_is_published_for_a_caller_with_something_to_print() [io]
+    let buf = Buffer.new()
+
+    test.case("the TTY clear writes an erase")
+    test.assert(list.len(progdraw.clear_into([], progdraw.term())) > 0)
+
+    test.case("the plain one writes nothing, because there is nothing to erase")
+    test.assert(list.len(progdraw.clear_into([], progdraw.plain(80))) == 0)
+
+    test.case("and the writer form agrees")
+    match progdraw.clear_to(buf, progdraw.term())
+        Some(e) => test.assert(str.len(e.message()) > 0)
+        None    => test.assert(true)
+
+@test
+fn test_the_terminal_is_a_value_the_caller_builds() [io]
+    // This package asks the terminal nothing; a library that queried it
+    // would be `[io]` everywhere, untestable, and wrong inside a pipe.
+    test.case("a default width")
+    test.assert(progdraw.term().columns == 80)
+
+    test.case("a width the caller names")
+    test.assert(progdraw.term_of(120).columns == 120)
+
+    test.case("a style the caller names")
+    test.assert(progdraw.with_style(progdraw.term(), progstyle.ascii()).style.filled
+                == progstyle.ascii().filled)
+
+    test.case("and a width rule the caller names")
+    let cjk = progdraw.with_width_rule(progdraw.term(), progtmpl.width_rule_cjk())
+    test.assert(cjk.columns == 80)
+
+@test
+fn test_the_clock_is_one_function_and_it_is_the_only_time_row() [io, time]
+    // The whole reason this package's layer is `host` rather than
+    // `core`.  Every other function in it takes the instant.
+    test.case("it answers something after the epoch")
+    test.assert(progdraw.now() > 0.0)

@@ -1,0 +1,76 @@
+[package]
+name        = "progress-nv"
+version     = "0.0.1"
+description = "Progress bars and spinners that take the writer rather than printing: a ProgState is a value, rendering it is a pure function, the clock and the terminal width arrive as arguments, and the only effectful functions are the ones that hand bytes to a caller's Write.  The redraw rate is a value, a non-TTY writer gets milestone lines instead of escape sequences, and the width is counted in CELLS through unicode-nv.  Interface only — every body is a todo()."
+license     = "Apache-2.0"
+
+# An INTERFACE release: every `pub fn` body is a `todo()`, so the
+# signatures and the effect rows are published and nothing is
+# implemented.  `novo pkg publish` recognises the shape and requires
+# both the draft stability and the 0.0.x version; the first
+# implementation is the 0.1.0 published over it.
+stability   = "draft"
+
+# `host`, and one function is the whole reason.
+#
+# Every measurement, every template and every render in this package is
+# `[]`: the instant is an argument, the terminal width is an argument,
+# and the bytes go into a caller's buffer.  The draw functions are
+# effect-polymorphic — `fn draw_to<W: Write[e]>(w: W, …) [e]` — so they
+# cost exactly what the caller's writer costs and nothing of their own.
+#
+# What makes the package `host` is `progtick.now()`, which reads the
+# clock: `[time]`, one function, and a caller who has an instant already
+# never touches it.  The rendering half would be a `core` package on its
+# own; it is not split because a progress bar with no way to ask the
+# time is a library nobody can use without writing that function
+# themselves, and every one of them would write it differently.
+layer       = "host"
+
+category    = "tooling"
+
+tags        = ["progress", "indicatif", "tqdm", "spinner", "bar", "terminal", "cli"]
+repository  = "https://github.com/novolang/progress-nv"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+# A library: no `main`, so `novo pkg build` type-checks and
+# effect-checks every module under `src/` and writes no binary.
+
+[docs.pages]
+"README.md" = "A value, a pure render, and the writer the caller already has"
+
+[dependencies]
+# The ETA and the elapsed time, in words.
+#
+# `2 min 30 s` is `humantime.format_duration`, and the rounding
+# decisions behind it — when a second stops being worth showing, when
+# to say `~` — are already made there.  A bar that formatted its own
+# durations would disagree with every other tool in the ecosystem after
+# about a week.  `core`.
+humantime-nv = "^0.0.1"
+
+# The width, in CELLS.
+#
+# A bar sized by bytes or by codepoints does not line up: `世界` is six
+# bytes, two codepoints and four cells.  `uwidth.char_width` is the
+# rule, handed to textwrap-nv as the `WrapWidth` the message field is
+# measured and truncated with — the same arrangement table-nv uses, so
+# a bar and a table on the same terminal cannot come to different
+# answers.  `core`.
+unicode-nv = "^0.0.1"
+
+# The `WrapWidth` itself, and the truncation of a message that does not
+# fit.
+#
+# One rule shared with table-nv rather than a measure of this package's
+# own.  `core`.
+textwrap-nv = "^0.0.1"
+
+# The redraw: moving the cursor up, erasing a line, and the state
+# machine that says an escape sequence costs no width.
+#
+# `seqwrite` writes the sequences into a caller's buffer, which is
+# exactly the shape the draw functions here need, and `vtparse` is how a
+# coloured message is measured without a regular expression.  `core`.
+ansi-nv = "^0.0.1"

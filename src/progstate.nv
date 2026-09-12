@@ -1,0 +1,465 @@
+// progstate.nv — the bar as a value, with the clock outside it.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// THE LOAD-BEARING DECISION: `ProgState` IS A VALUE AND THE INSTANT IS
+// AN ARGUMENT.  Nothing in this module reads a clock, writes a byte or
+// knows what a terminal is.  `advance(st, 1, at)` answers a new state;
+// `eta(st, at)` answers a duration; `fraction(st)` answers a number.
+// Every function here is `[]`.
+//
+// indicatif and tqdm both own the clock and own the output, and the
+// price is paid in four places.
+//
+//   1. A PROGRESS BAR CANNOT BE TESTED.  "After 30 seconds and 300 of
+//      1000 items, the estimate is 70 seconds" is a statement about
+//      arithmetic, and where the clock is inside the bar it can only be
+//      checked by waiting.  Here it is one assertion over two integers
+//      and a float.
+//   2. THE RATE SMOOTHING IS INVISIBLE.  Every bar smooths — an
+//      instantaneous rate makes an estimate that jumps by minutes — and
+//      the smoothing is what a reader most wants to see and least often
+//      can.  `ProgSmoothing` is a field.
+//   3. A BAR CANNOT BE DRIVEN BY ANYTHING BUT WALL TIME.  A download
+//      resumed from a log, a replay of a build, a test of the
+//      formatting: each of them has an instant, and none of them is
+//      `now`.
+//   4. THE ROW SPREADS.  A bar that reads the clock charges `[time]` to
+//      every caller of every function it has.
+//
+// SECONDS AS A `Float`, matching `std.time`'s own `now()` and
+// `elapsed_since`, and converted to humantime-nv's `HtDuration` only at
+// the edge where words are wanted.  A monotonic clock is what a
+// duration should be measured against and `std.time` does not publish
+// one; the consequence is stated in `progtick` rather than hidden.
+
+use htdur
+
+// What is being counted, which decides how a number is written.
+//
+// Not a formatting flag: `1.4 MiB/s` and `1400 items/s` are different
+// sentences, and the unit is what tells `progtmpl` which to write.
+pub enum ProgUnit
+    // A count of things.  Rendered as a plain integer with thousands
+    // separators.
+    ProgItems
+    // Bytes.  Rendered with binary prefixes — `KiB`, `MiB` — because a
+    // transfer measured in decimal megabytes and a file measured in
+    // binary ones differ by five per cent and somebody always notices.
+    ProgBytes
+    // A count of things with a name, for the `1200 rows/s` case.
+    ProgNamed(singular: Str, plural: Str)
+
+// Where a bar is in its life.
+//
+// `ProgAbandoned` is separate from `ProgFinished` because a bar that
+// stopped at 70% and a bar that completed should not render the same,
+// and a caller that only had a boolean would have to keep the
+// distinction somewhere else.
+pub enum ProgPhase
+    ProgRunning
+    ProgFinished
+    ProgAbandoned
+
+// How the rate is smoothed.
+//
+// Published as a value because the estimate a person reads is almost
+// entirely this: an unsmoothed rate makes an ETA that swings by
+// minutes, and a rate averaged over the whole run makes one that never
+// reacts to a stall.
+pub struct ProgSmoothing
+    // How many recent samples the rate is averaged over.  0 means the
+    // average since the start, which is right for a progress bar over
+    // work that is genuinely uniform and wrong for a download.
+    window: Int
+    // The weight of the newest sample, between 0.0 and 1.0, when the
+    // window is exponential.  indicatif's default is 0.1; tqdm's is
+    // 0.3, which reacts faster and reads as jumpier.
+    alpha: Float
+
+// One sample of position against time.
+pub struct ProgSample
+    at: Float
+    position: Int
+
+// A bar, as a value.
+pub struct ProgState
+    // What has been done.  May exceed `length`, which is not an error:
+    // a length is usually an estimate, and a bar that clamped would
+    // report 100% for the last third of a run.
+    position: Int
+    // What there is to do, or `0 - 1` when it is not known — which is a
+    // spinner rather than a bar, and is the same type rather than a
+    // second one, because the only difference is what can be rendered.
+    length: Int
+    // When `start` was called, in seconds.
+    started_at: Float
+    // The instant of the most recent update.
+    updated_at: Float
+    phase: ProgPhase
+    unit: ProgUnit
+    smoothing: ProgSmoothing
+    // Recent samples, newest last, at most `smoothing.window` of them.
+    // Carried on the value rather than in a side table so that a state
+    // copied into a log and read back estimates the same way.
+    samples: [ProgSample]
+    // The line's message — a filename, a step name.  Truncated at
+    // render time to what fits; kept whole here, because the width is
+    // not this module's business.
+    message: Str
+
+// The default smoothing: a window of 16 samples, alpha 0.1.
+//
+// indicatif's numbers, because they are what a person's expectation of
+// "how a progress bar behaves" has been trained on.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.smoothing().window}")
+// ```
+pub fn smoothing() -> ProgSmoothing []
+    todo("progress-nv.progstate.smoothing")
+
+// Smoothing over the whole run: no window, no decay.
+//
+// Right where the work really is uniform — a checksum over a file — and
+// wrong for anything that stalls.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.uniform_smoothing().window}")
+// ```
+pub fn uniform_smoothing() -> ProgSmoothing []
+    todo("progress-nv.progstate.uniform_smoothing")
+
+// A bar with a known length, starting now.
+//
+// `at` is the caller's instant; see the module comment for why it is
+// not read here.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.start(1000, 0.0).length}")
+// ```
+pub fn start(length: Int, at: Float) -> ProgState []
+    todo("progress-nv.progstate.start")
+
+// A spinner: the same value with no length.
+//
+// The same type rather than a second one, because the only difference
+// is what a renderer can draw — `has_length` is the question, and
+// `progtmpl` is where it is asked.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.start_spinner(0.0).length}")
+// ```
+pub fn start_spinner(at: Float) -> ProgState []
+    todo("progress-nv.progstate.start_spinner")
+
+// The state with a different unit.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     let st = progstate.with_unit(progstate.start(1000, 0.0), ProgBytes)
+//     println("${progstate.has_length(st)}")
+// ```
+pub fn with_unit(st: ProgState, unit: ProgUnit) -> ProgState []
+    todo("progress-nv.progstate.with_unit")
+
+// The state with different smoothing.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     let st = progstate.with_smoothing(progstate.start(1000, 0.0),
+//                                       progstate.uniform_smoothing())
+//     println("${st.smoothing.window}")
+// ```
+pub fn with_smoothing(st: ProgState, s: ProgSmoothing) -> ProgState []
+    todo("progress-nv.progstate.with_smoothing")
+
+// The state with a message.
+//
+// Kept whole; truncation is the renderer's, because only it knows the
+// width.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println(progstate.with_message(progstate.start(10, 0.0), "unpacking").message)
+// ```
+pub fn with_message(st: ProgState, message: Str) -> ProgState []
+    todo("progress-nv.progstate.with_message")
+
+// The state with a different length — an estimate corrected.
+//
+// A real event: a download whose `Content-Length` arrives after the
+// first chunk, an archive whose entry count is known only after the
+// directory is read.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.with_length(progstate.start_spinner(0.0), 500).length}")
+// ```
+pub fn with_length(st: ProgState, length: Int) -> ProgState []
+    todo("progress-nv.progstate.with_length")
+
+// The state `delta` further on, at this instant.
+//
+// The call a loop makes.  The sample is recorded and the window is
+// trimmed; nothing else changes.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.advance(progstate.start(1000, 0.0), 10, 1.0).position}")
+// ```
+pub fn advance(st: ProgState, delta: Int, at: Float) -> ProgState []
+    todo("progress-nv.progstate.advance")
+
+// The state at an absolute position.
+//
+// For a caller that knows where it is rather than how far it moved —
+// a resumed download, a seek.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.set_position(progstate.start(1000, 0.0), 300, 1.0).position}")
+// ```
+pub fn set_position(st: ProgState, position: Int, at: Float) -> ProgState []
+    todo("progress-nv.progstate.set_position")
+
+// The state, finished: position set to length, phase `ProgFinished`.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.finish(progstate.start(1000, 0.0), 10.0).position}")
+// ```
+pub fn finish(st: ProgState, at: Float) -> ProgState []
+    todo("progress-nv.progstate.finish")
+
+// The state, given up on: the position stays where it was, phase
+// `ProgAbandoned`.
+//
+// What a failed step leaves behind, and it renders differently on
+// purpose — a bar left at 70% is information.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     let st = progstate.abandon(progstate.start(1000, 0.0), 10.0)
+//     println("${progstate.is_running(st)}")
+// ```
+pub fn abandon(st: ProgState, at: Float) -> ProgState []
+    todo("progress-nv.progstate.abandon")
+
+// Whether the length is known.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.has_length(progstate.start_spinner(0.0))}")
+// ```
+pub fn has_length(st: ProgState) -> Bool []
+    todo("progress-nv.progstate.has_length")
+
+// Whether the bar is still going.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.is_running(progstate.start(10, 0.0))}")
+// ```
+pub fn is_running(st: ProgState) -> Bool []
+    todo("progress-nv.progstate.is_running")
+
+// How far along, between 0.0 and 1.0.
+//
+// `0.0` for a spinner, because there is no answer and a renderer that
+// got one would draw a bar that means nothing.  Clamped to 1.0 when the
+// position ran past an estimated length.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.fraction(progstate.set_position(progstate.start(1000, 0.0), 250, 1.0))}")
+// ```
+pub fn fraction(st: ProgState) -> Float []
+    todo("progress-nv.progstate.fraction")
+
+// What remains, or `0 - 1` when the length is unknown.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.remaining(progstate.start(1000, 0.0))}")
+// ```
+pub fn remaining(st: ProgState) -> Int []
+    todo("progress-nv.progstate.remaining")
+
+// How long it has been running, in seconds, at this instant.
+//
+// For a finished or abandoned bar, how long it ran — the elapsed time
+// of a completed step does not keep growing while it is on the screen.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.elapsed(progstate.start(10, 0.0), 3.5)}")
+// ```
+pub fn elapsed(st: ProgState, at: Float) -> Float []
+    todo("progress-nv.progstate.elapsed")
+
+// Units per second, smoothed as the state's `ProgSmoothing` says.
+//
+// `0.0` before there are two samples: a rate from one sample is a
+// division by zero dressed up, and the estimate it produces is the
+// reason a bar's first ETA is usually absurd.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.rate(progstate.start(1000, 0.0), 1.0)}")
+// ```
+pub fn rate(st: ProgState, at: Float) -> Float []
+    todo("progress-nv.progstate.rate")
+
+// The unsmoothed rate over the whole run, for comparison.
+//
+// Published because "the average was 4 MiB/s and the current rate is
+// 400 KiB/s" is the sentence a person wants at the end of a slow
+// download, and because a test of the smoothing needs both numbers.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     println("${progstate.mean_rate(progstate.start(1000, 0.0), 1.0)}")
+// ```
+pub fn mean_rate(st: ProgState, at: Float) -> Float []
+    todo("progress-nv.progstate.mean_rate")
+
+// How long the rest will take, in seconds — or `None`.
+//
+// `None` rather than a number for three cases a bar must not guess at:
+// the length is unknown, the rate is zero, and nothing has finished
+// yet.  A renderer draws `--` for `None`, which is honest; indicatif's
+// habit of showing an estimate from one sample is where "17 hours
+// remaining" on a five-second task comes from.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     match progstate.eta(progstate.start(1000, 0.0), 1.0)
+//         Some(secs) => println("${secs}")
+//         None       => println("not yet")
+// ```
+pub fn eta(st: ProgState, at: Float) -> ?Float []
+    todo("progress-nv.progstate.eta")
+
+// The ETA as humantime-nv's duration, for the words.
+//
+// **Zero when there is no estimate**, and not an optional — which is a
+// language rule and not a preference: `HtDuration` is a `@value`
+// struct, and a `@value` struct cannot be a `?T` payload (E2015),
+// because it is unboxed and an optional position has no unboxed
+// lowering.  So `eta` is the function that answers `None`, and this one
+// is the formatting convenience beside it; `has_eta` is the predicate
+// to ask first.
+//
+// ```novo
+// use progstate
+// use htdur
+//
+// fn main() [io]
+//     let d = progstate.eta_duration(progstate.start(1000, 0.0), 1.0)
+//     println("${htdur.as_secs(d)}")
+// ```
+pub fn eta_duration(st: ProgState, at: Float) -> HtDuration []
+    todo("progress-nv.progstate.eta_duration")
+
+// Whether there is an estimate at all.
+//
+// The predicate `eta_duration` cannot express in its return type. False
+// when the length is unknown, when the rate is zero, and before
+// anything has finished.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     let yet = progstate.has_eta(progstate.start(1000, 0.0), 1.0)
+//     println("${yet}")
+// ```
+pub fn has_eta(st: ProgState, at: Float) -> Bool []
+    todo("progress-nv.progstate.has_eta")
+
+// The elapsed time as humantime-nv's duration.
+//
+// ```novo
+// use progstate
+// use htdur
+//
+// fn main() [io]
+//     let d = progstate.elapsed_duration(progstate.start(10, 0.0), 3.5)
+//     println("${htdur.as_secs(d)}")
+// ```
+pub fn elapsed_duration(st: ProgState, at: Float) -> HtDuration []
+    todo("progress-nv.progstate.elapsed_duration")
+
+// When it is expected to finish, as an instant — or `None`.
+//
+// `eta` plus the instant, so a caller reporting a wall-clock time does
+// not add them up itself and get it wrong at a midnight boundary.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     match progstate.eta_at(progstate.start(1000, 0.0), 1.0)
+//         Some(at) => println("${at}")
+//         None     => println("not yet")
+// ```
+pub fn eta_at(st: ProgState, at: Float) -> ?Float []
+    todo("progress-nv.progstate.eta_at")
+
+// The most recent sample, or `None`.
+//
+// ```novo
+// use progstate
+//
+// fn main() [io]
+//     match progstate.last_sample(progstate.start(1000, 0.0))
+//         Some(s) => println("${s.position}")
+//         None    => println("none yet")
+// ```
+pub fn last_sample(st: ProgState) -> ?ProgSample []
+    todo("progress-nv.progstate.last_sample")

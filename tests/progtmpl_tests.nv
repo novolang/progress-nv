@@ -1,0 +1,179 @@
+// progtmpl_tests.nv — the line, measured in cells.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: progress-nv.<module>.<fn>`.
+//
+// TWO THINGS ARE WORTH ASSERTING HERE AND NOTHING ELSE IS.  A template
+// that does not parse must say where — indicatif drops a misspelled
+// field silently, and a person's bar is then missing a number with no
+// explanation.  And a rendered line must be exactly the width it was
+// given, in CELLS, because a line one cell too long wraps and a
+// multi-bar's cursor arithmetic then walks up the screen.
+
+use std.test
+use std.str
+use std.list
+use widths
+use progstate
+use progstyle
+use progtmpl
+
+fn fixture() -> ProgState
+    progstate.set_position(progstate.start(1000, 0.0), 250, 1.0)
+
+@test
+fn test_a_misspelled_field_is_refused_with_its_offset() [io]
+    test.case("an unknown name")
+    match progtmpl.parse("{bar} {nonesuch}")
+        Ok(_)  => test.assert(false)
+        Err(e) => test.assert(str.len(e.message()) > 0)
+
+    test.case("an unclosed brace")
+    match progtmpl.parse("{bar")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("and the known names are published, so a message can suggest one")
+    test.assert(list.len(progtmpl.field_names()) > 0)
+
+@test
+fn test_two_fields_cannot_both_take_the_leftover_width() [io]
+    // There is no policy for sharing it that anybody agrees with, so
+    // the refusal names both.
+    match progtmpl.parse("{bar} {msg}")
+        Ok(_)  => test.assert(false)
+        Err(e) => test.assert(str.len(e.message()) > 0)
+
+@test
+fn test_a_template_of_fixed_fields_is_legal() [io]
+    // It renders to a line shorter than the terminal, which is fine.
+    match progtmpl.parse("{pos}/{len} ({percent}%)")
+        Err(_) => test.assert(false)
+        Ok(t)  => test.assert(t.flexible < 0)
+
+@test
+fn test_a_rendered_line_is_exactly_the_width_it_was_given() [io]
+    // The invariant the multi-bar's cursor arithmetic depends on.
+    let line = progtmpl.render(progtmpl.default_template(), fixture(),
+                               progstyle.style(), 80, progtmpl.width_rule(), 1.0)
+
+    test.case("eighty cells")
+    test.assert(widths.str_width(progtmpl.width_rule(), line) == 80)
+
+    test.case("and no newline in it")
+    test.assert(str.contains(line, "\n") == false)
+
+@test
+fn test_a_wide_message_is_measured_in_cells_and_not_in_bytes() [io]
+    // `世界` is six bytes, two codepoints and four cells, and a line
+    // sized by either of the first two does not line up.
+    let st = progstate.with_message(fixture(), "世界世界世界")
+    let line = progtmpl.render(progtmpl.default_template(), st,
+                               progstyle.style(), 40, progtmpl.width_rule(), 1.0)
+
+    test.case("still forty cells")
+    test.assert(widths.str_width(progtmpl.width_rule(), line) == 40)
+
+@test
+fn test_the_two_width_rules_disagree_only_about_ambiguous_characters() [io]
+    test.case("a wide character is two cells under both")
+    test.assert(widths.str_width(progtmpl.width_rule(), "世") == 2)
+    test.assert(widths.str_width(progtmpl.width_rule_cjk(), "世") == 2)
+
+    test.case("and ASCII is one under both")
+    test.assert(widths.str_width(progtmpl.width_rule(), "a") == 1)
+    test.assert(widths.str_width(progtmpl.width_rule_cjk(), "a") == 1)
+
+@test
+fn test_the_layout_is_solvable_because_exactly_one_field_expands() [io]
+    let t = progtmpl.default_template()
+
+    test.case("the fixed part is measurable on its own")
+    let fixed = progtmpl.fixed_width(t, fixture(), progstyle.style(),
+                                     progtmpl.width_rule(), 1.0)
+    test.assert(fixed > 0)
+
+    test.case("and the flexible field gets the rest")
+    let flex = progtmpl.flexible_width(t, fixture(), progstyle.style(), 80,
+                                       progtmpl.width_rule(), 1.0)
+    test.assert(fixed + flex == 80)
+
+@test
+fn test_a_terminal_too_narrow_gives_the_bar_nothing_rather_than_a_negative() [io]
+    test.case("zero and not below")
+    test.assert(progtmpl.flexible_width(progtmpl.default_template(), fixture(),
+                                        progstyle.style(), 10,
+                                        progtmpl.width_rule(), 1.0) == 0)
+
+@test
+fn test_the_buffer_form_and_the_string_form_are_the_same_bytes() [io]
+    let out = progtmpl.render_into([], progtmpl.default_template(), fixture(),
+                                   progstyle.style(), 80, progtmpl.width_rule(), 1.0)
+    let text = progtmpl.render(progtmpl.default_template(), fixture(),
+                               progstyle.style(), 80, progtmpl.width_rule(), 1.0)
+
+    test.case("same length")
+    test.assert(list.len(out) == str.len(text))
+
+@test
+fn test_one_token_is_the_unit_of_every_formatting_question() [io]
+    let st = fixture()
+
+    test.case("a quarter is 25")
+    test.assert(progtmpl.render_token(ProgPercent, st, progstyle.style(), 1.0) == "25")
+
+    test.case("a known length renders as a number")
+    test.assert(progtmpl.render_token(ProgLen, st, progstyle.style(), 1.0) == "1000")
+
+    test.case("an unknown one renders as a question mark, not as zero")
+    let spun = progstate.start_spinner(0.0)
+    test.assert(progtmpl.render_token(ProgLen, spun, progstyle.style(), 1.0) == "?")
+
+    test.case("and an absent estimate renders as two dashes")
+    test.assert(progtmpl.render_token(ProgEta, progstate.start(1000, 0.0),
+                                      progstyle.style(), 0.5) == "--")
+
+@test
+fn test_a_count_is_written_in_the_states_unit() [io]
+    test.case("items get thousands separators")
+    test.assert(progtmpl.format_count(1024, ProgItems) == "1,024")
+
+    test.case("bytes get binary prefixes, because decimal ones are off by five per cent")
+    test.assert(str.contains(progtmpl.format_count(1024, ProgBytes), "KiB"))
+
+@test
+fn test_a_rate_of_zero_is_two_dashes_and_not_zero_per_second() [io]
+    // `0/s` on a bar that has not started reads as a stall.
+    test.case("zero")
+    test.assert(progtmpl.format_rate(0.0, ProgItems) == "--")
+
+    test.case("and a real rate is written in the unit")
+    test.assert(str.contains(progtmpl.format_rate(1048576.0, ProgBytes), "MiB"))
+
+@test
+fn test_a_duration_is_humantimes_words() [io]
+    test.case("two and a half minutes")
+    test.assert(str.len(progtmpl.format_seconds(150.0)) > 0)
+
+    test.case("and a negative is two dashes rather than a negative duration")
+    test.assert(progtmpl.format_seconds(0.0 - 1.0) == "--")
+
+@test
+fn test_the_three_default_templates_parse() [io]
+    test.case("the bar")
+    match progtmpl.parse(progtmpl.default_template_text())
+        Err(_) => test.assert(false)
+        Ok(_)  => test.assert(true)
+
+    test.case("the spinner")
+    match progtmpl.parse(progtmpl.default_spinner_text())
+        Err(_) => test.assert(false)
+        Ok(_)  => test.assert(true)
+
+    test.case("and the one novo pkg add would use")
+    match progtmpl.parse(progtmpl.download_template_text())
+        Err(_) => test.assert(false)
+        Ok(_)  => test.assert(true)
+
+    test.case("the parsed default has tokens")
+    test.assert(list.len(progtmpl.default_template().tokens) > 0)

@@ -1,0 +1,325 @@
+// progmulti.nv — several bars at once, and the cursor arithmetic that
+// is the only hard part.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// A MULTI-BAR IS A LIST AND A PREVIOUS HEIGHT.  Drawing N lines in
+// place means going up by however many lines were drawn last time,
+// erasing each, and writing the new ones — and every bug in every
+// multi-progress implementation is that number being wrong: a bar
+// removed, a line that wrapped because the terminal was narrower than
+// the render assumed, a message printed by another thread in between.
+//
+// So the height is a VALUE the caller carries (`ProgMulti.drawn`), the
+// arithmetic that produces the escape sequence is `[]`
+// (`move_up_into`), and `draw_all_to` answers the new multi so the
+// caller cannot forget to keep it.  A test asserts the byte sequence
+// for "three bars were four lines and are now three" with no terminal.
+//
+// A LINE THAT WRAPS BREAKS THE ARITHMETIC, and there is no way to
+// detect it after the fact, so the renderer must not produce one:
+// every line is rendered to at most `term.columns` cells, and that is
+// what `progtmpl`'s width solving is for.  This is stated here because
+// it is the invariant the cursor arithmetic depends on, and because a
+// caller who passes a width larger than the terminal gets a display
+// that slowly walks up the screen.
+//
+// IN `ProgPlain` THERE IS NO CURSOR.  Each bar's milestones are written
+// as they come, prefixed with the bar's message so a reader can tell
+// which is which, and nothing is ever redrawn.  That is what a
+// continuous-integration log should contain, and it is why the mode is
+// on the terminal rather than being a different type of multi-bar.
+
+use progstate
+use progtmpl
+use progdraw
+
+// One bar in a multi-bar display.
+pub struct ProgLine
+    state: progstate.ProgState
+    // This line's template. Per line rather than per display, because
+    // a download and a verification step in the same display want
+    // different fields, and a display that forced one template would
+    // make every line the widest one's shape.
+    template: progtmpl.ProgTemplate
+
+// Several bars, drawn together.
+pub struct ProgMulti
+    lines: [ProgLine]
+    // How many lines were written by the last draw.  The number the
+    // cursor arithmetic depends on, carried on the value rather than
+    // kept in a module variable, so that two displays in one process
+    // are possible and a display copied into a helper does not lose
+    // track.
+    drawn: Int
+    // Lines that have finished and been moved above the display, so the
+    // cursor never goes back over them.  A completed step should scroll
+    // away with the rest of the output rather than staying pinned.
+    retired: Int
+
+// An empty display.
+//
+// ```novo
+// use progmulti
+//
+// fn main() [io]
+//     println("${progmulti.multi().drawn}")
+// ```
+pub fn multi() -> ProgMulti []
+    todo("progress-nv.progmulti.multi")
+
+// A display over these bars, with the default template on each.
+//
+// ```novo
+// use progstate
+// use progmulti
+// use std.list
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.start(100, 0.0), progstate.start(200, 0.0)])
+//     println("${list.len(m.lines)}")
+// ```
+pub fn of(states: [progstate.ProgState]) -> ProgMulti []
+    todo("progress-nv.progmulti.of")
+
+// One more bar at the bottom, with the default template.
+//
+// Answers the index, because the caller needs it to update the bar
+// afterwards and searching the list by message is how two downloads of
+// the same file end up sharing a line.
+//
+// ```novo
+// use progstate
+// use progmulti
+//
+// fn main() [io]
+//     let m = progmulti.multi()
+//     println("${progmulti.line_count(progmulti.add(m, progstate.start(100, 0.0)))}")
+// ```
+pub fn add(m: ProgMulti, st: progstate.ProgState) -> ProgMulti []
+    todo("progress-nv.progmulti.add")
+
+// One more bar with its own template.
+//
+// ```novo
+// use progstate
+// use progtmpl
+// use progmulti
+//
+// fn main() [io]
+//     let m = progmulti.add_with(progmulti.multi(), progstate.start(100, 0.0),
+//                                progtmpl.default_template())
+//     println("${progmulti.line_count(m)}")
+// ```
+pub fn add_with(m: ProgMulti, st: progstate.ProgState, t: progtmpl.ProgTemplate) -> ProgMulti []
+    todo("progress-nv.progmulti.add_with")
+
+// The display with one line's state replaced.
+//
+// By index, which is what `add` answered. An index the display does
+// not have leaves it unchanged rather than raising: a display is drawn
+// from a loop and a stale index is a caller's bug that should not take
+// the program with it.
+//
+// ```novo
+// use progstate
+// use progmulti
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.start(100, 0.0)])
+//     println("${progmulti.line_count(progmulti.update(m, 0, progstate.start(50, 0.0)))}")
+// ```
+pub fn update(m: ProgMulti, index: Int, st: progstate.ProgState) -> ProgMulti []
+    todo("progress-nv.progmulti.update")
+
+// One line's state, or `None`.
+//
+// ```novo
+// use progstate
+// use progmulti
+//
+// fn main() [io]
+//     match progmulti.line(progmulti.of([progstate.start(100, 0.0)]), 0)
+//         Some(st) => println("${st.length}")
+//         None     => println("no such line")
+// ```
+pub fn line(m: ProgMulti, index: Int) -> ?progstate.ProgState []
+    todo("progress-nv.progmulti.line")
+
+// How many bars the display has.
+//
+// ```novo
+// use progmulti
+//
+// fn main() [io]
+//     println("${progmulti.line_count(progmulti.multi())}")
+// ```
+pub fn line_count(m: ProgMulti) -> Int []
+    todo("progress-nv.progmulti.line_count")
+
+// Move every finished bar above the display, so it scrolls away.
+//
+// The step that makes a long run readable: a hundred completed
+// downloads should be a hundred lines of output, not a hundred lines
+// the cursor walks back over every frame. Answers the new display, and
+// the retired lines are written once by the next `draw_all_to`.
+//
+// ```novo
+// use progstate
+// use progmulti
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.finish(progstate.start(100, 0.0), 1.0)])
+//     println("${progmulti.retire_finished(m).retired}")
+// ```
+pub fn retire_finished(m: ProgMulti) -> ProgMulti []
+    todo("progress-nv.progmulti.retire_finished")
+
+// Whether every bar has finished or been abandoned.
+//
+// The loop condition a caller driving several tasks needs.
+//
+// ```novo
+// use progstate
+// use progmulti
+//
+// fn main() [io]
+//     println("${progmulti.all_done(progmulti.multi())}")
+// ```
+pub fn all_done(m: ProgMulti) -> Bool []
+    todo("progress-nv.progmulti.all_done")
+
+// The bytes that move the cursor up `n` lines and put it at column one.
+//
+// `[]`, and published because it is the arithmetic every multi-bar
+// implementation gets wrong: `n` of zero must write NOTHING, not a
+// `CUU` with a zero parameter, which most terminals read as one line.
+//
+// ```novo
+// use progmulti
+// use std.list
+//
+// fn main() [io]
+//     println("${list.len(progmulti.move_up_into([], 0))}")
+// ```
+pub fn move_up_into(out: [u8], n: Int) -> [u8] []
+    todo("progress-nv.progmulti.move_up_into")
+
+// The whole display's bytes, into a caller's buffer.
+//
+// The cursor movement for the previous height, then one rendered line
+// per bar, each erased to the end of the line first. `[]`, so a test of
+// a three-bar display's exact bytes needs no terminal.
+//
+// ```novo
+// use progstate
+// use progmulti
+// use progdraw
+// use std.list
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.start(100, 0.0)])
+//     println("${list.len(progmulti.frame_all_into([], m, progdraw.term(), 1.0))}")
+// ```
+pub fn frame_all_into(out: [u8], m: ProgMulti, t: progdraw.ProgTerm, at: Float) -> [u8] []
+    todo("progress-nv.progmulti.frame_all_into")
+
+// Draw the whole display to a writer, and answer the display with its
+// new height.
+//
+// The caller has to keep the answer — the height is how the next frame
+// knows how far up to go — which is the same shape `tempdir-nv`'s
+// `persist` has and for the same reason: there is no destructor and no
+// hidden state, so a value that changed has to be a value the caller
+// holds.
+//
+// ```novo
+// use progstate
+// use progmulti
+// use progdraw
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.start(100, 0.0)])
+//     let buf = Buffer.new()
+//     match progmulti.draw_all_to(buf, m, progdraw.term(), 1.0)
+//         Ok(next) => println("${next.drawn}")
+//         Err(e)   => println(e.message())
+// ```
+pub fn draw_all_to<W: Write[e]>(w: W, m: ProgMulti, t: progdraw.ProgTerm,
+                                at: Float) -> Result<ProgMulti, IoError> [e]
+    todo("progress-nv.progmulti.draw_all_to")
+
+// Draw the display only if the policy says a frame is due.
+//
+// ```novo
+// use progstate
+// use progmulti
+// use progdraw
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.start(100, 0.0)])
+//     let buf = Buffer.new()
+//     match progmulti.draw_all_if_due(buf, m, m, progdraw.term(), progdraw.tick(), 1.0)
+//         Ok(next) => println("${next.drawn}")
+//         Err(e)   => println(e.message())
+// ```
+pub fn draw_all_if_due<W: Write[e]>(w: W, previous: ProgMulti, current: ProgMulti,
+                                    t: progdraw.ProgTerm, policy: progdraw.ProgTick,
+                                    at: Float) -> Result<ProgMulti, IoError> [e]
+    todo("progress-nv.progmulti.draw_all_if_due")
+
+// Write the final state of every line and leave the cursor below the
+// display.
+//
+// What a run does when it ends, so the program's next output does not
+// land on the bars.
+//
+// ```novo
+// use progstate
+// use progmulti
+// use progdraw
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.start(100, 0.0)])
+//     let buf = Buffer.new()
+//     match progmulti.finish_all_to(buf, m, progdraw.term(), 1.0)
+//         Some(e) => println(e.message())
+//         None    => println("done")
+// ```
+pub fn finish_all_to<W: Write[e]>(w: W, m: ProgMulti, t: progdraw.ProgTerm,
+                                  at: Float) -> ?IoError [e]
+    todo("progress-nv.progmulti.finish_all_to")
+
+// Erase the whole display and put the cursor back at its top.
+//
+// For a caller that has to print something in the middle of a run.
+//
+// ```novo
+// use progstate
+// use progmulti
+// use progdraw
+//
+// fn main() [io]
+//     let m = progmulti.of([progstate.start(100, 0.0)])
+//     let buf = Buffer.new()
+//     match progmulti.clear_all_to(buf, m, progdraw.term())
+//         Some(e) => println(e.message())
+//         None    => println("cleared")
+// ```
+pub fn clear_all_to<W: Write[e]>(w: W, m: ProgMulti, t: progdraw.ProgTerm) -> ?IoError [e]
+    todo("progress-nv.progmulti.clear_all_to")
+
+// How tall the display will be when it is next drawn.
+//
+// The retired lines plus the live ones. Published because it is the
+// number the cursor arithmetic uses, and a caller sharing the screen
+// with something else needs to know it.
+//
+// ```novo
+// use progmulti
+//
+// fn main() [io]
+//     println("${progmulti.height(progmulti.multi())}")
+// ```
+pub fn height(m: ProgMulti) -> Int []
+    todo("progress-nv.progmulti.height")

@@ -1,0 +1,174 @@
+// progmulti_tests.nv — the cursor arithmetic, asserted without a
+// terminal.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: progress-nv.<module>.<fn>`.
+//
+// EVERY BUG IN EVERY MULTI-PROGRESS IMPLEMENTATION IS ONE NUMBER: how
+// far up the cursor goes before it redraws.  Because the height is a
+// value on `ProgMulti` and the movement is `[]`, "three bars were four
+// lines and are now three" is an assertion here rather than something
+// discovered by watching a terminal walk up the screen.
+//
+// The one case worth naming on its own is `move_up_into(out, 0)`: a
+// `CUU` with a zero parameter is read as ONE line by most terminals, so
+// zero must write nothing at all.
+
+use std.test
+use std.list
+use progstate
+use progtmpl
+use progdraw
+use progmulti
+
+fn two_bars() -> ProgMulti
+    progmulti.of([progstate.start(100, 0.0), progstate.start(200, 0.0)])
+
+@test
+fn test_moving_up_zero_lines_writes_nothing() [io]
+    // A CSI with a zero parameter means one, not zero, on most
+    // terminals — so this is the single byte sequence that must not be
+    // written.
+    test.case("zero is silence")
+    test.assert(list.len(progmulti.move_up_into([], 0)) == 0)
+
+    test.case("and one is not")
+    test.assert(list.len(progmulti.move_up_into([], 1)) > 0)
+
+@test
+fn test_the_display_carries_its_own_height() [io]
+    // No hidden state, so two displays in one process are possible and
+    // a display copied into a helper does not lose track.
+    let m = two_bars()
+
+    test.case("nothing drawn yet")
+    test.assert(m.drawn == 0)
+
+    test.case("two lines to draw")
+    test.assert(progmulti.line_count(m) == 2)
+    test.assert(progmulti.height(m) == 2)
+
+@test
+fn test_a_bar_is_added_and_addressed_by_index() [io]
+    // Searching the list by message is how two downloads of the same
+    // file end up sharing a line.
+    let m = progmulti.add(progmulti.multi(), progstate.start(100, 0.0))
+
+    test.case("one line")
+    test.assert(progmulti.line_count(m) == 1)
+
+    test.case("and it is at index zero")
+    match progmulti.line(m, 0)
+        None     => test.assert(false)
+        Some(st) => test.assert(st.length == 100)
+
+    test.case("an index the display does not have is None")
+    match progmulti.line(m, 7)
+        Some(_) => test.assert(false)
+        None    => test.assert(true)
+
+@test
+fn test_a_line_can_carry_its_own_template() [io]
+    // A download and a verification step in one display want different
+    // fields, and one template for all of them would make every line
+    // the widest one's shape.
+    let m = progmulti.add_with(progmulti.multi(), progstate.start(100, 0.0),
+                               progtmpl.default_template())
+
+    test.case("it is still one line")
+    test.assert(progmulti.line_count(m) == 1)
+
+@test
+fn test_updating_a_line_that_is_not_there_changes_nothing() [io]
+    // A display is drawn from a loop, and a stale index is a caller's
+    // bug that should not take the program with it.
+    let m = two_bars()
+    let same = progmulti.update(m, 9, progstate.start(50, 0.0))
+
+    test.case("still two lines")
+    test.assert(progmulti.line_count(same) == 2)
+
+    test.case("and the real update lands")
+    match progmulti.line(progmulti.update(m, 0, progstate.start(50, 0.0)), 0)
+        None     => test.assert(false)
+        Some(st) => test.assert(st.length == 50)
+
+@test
+fn test_a_finished_bar_is_retired_so_it_scrolls_away() [io]
+    // A hundred completed downloads should be a hundred lines of
+    // output, not a hundred lines the cursor walks back over every
+    // frame.
+    let done = progstate.finish(progstate.start(100, 0.0), 1.0)
+    let m = progmulti.of([done, progstate.start(200, 0.0)])
+    let after = progmulti.retire_finished(m)
+
+    test.case("one line retired")
+    test.assert(after.retired == 1)
+
+    test.case("and the height counts both")
+    test.assert(progmulti.height(after) == progmulti.line_count(after) + after.retired)
+
+@test
+fn test_all_done_is_the_loop_condition() [io]
+    let running = two_bars()
+    let finished = progmulti.of([progstate.finish(progstate.start(100, 0.0), 1.0)])
+
+    test.case("bars still running")
+    test.assert(progmulti.all_done(running) == false)
+
+    test.case("and one that is not")
+    test.assert(progmulti.all_done(finished))
+
+    test.case("an empty display is done, because there is nothing to wait for")
+    test.assert(progmulti.all_done(progmulti.multi()))
+
+@test
+fn test_a_frame_is_bytes_and_needs_no_terminal() [io]
+    let out = progmulti.frame_all_into([], two_bars(), progdraw.term(), 1.0)
+
+    test.case("two lines of bytes")
+    test.assert(list.len(out) > 0)
+
+    test.case("and nothing at all in silent mode")
+    test.assert(list.len(progmulti.frame_all_into([], two_bars(),
+                                                  progdraw.silent(), 1.0)) == 0)
+
+@test
+fn test_drawing_answers_the_display_with_its_new_height() [io]
+    // The caller has to keep the answer: the height is how the next
+    // frame knows how far up to go.  The same shape tempdir-nv's
+    // `persist` has, and for the same reason — no destructors and no
+    // hidden state.
+    let buf = Buffer.new()
+
+    match progmulti.draw_all_to(buf, two_bars(), progdraw.term(), 1.0)
+        Err(e)   => test.assert(e.message() != "")
+        Ok(next) =>
+            test.case("two lines were drawn")
+            test.assert(next.drawn == 2)
+
+            test.case("and something reached the buffer")
+            test.assert(buf.len() > 0)
+
+@test
+fn test_the_throttled_draw_takes_the_previous_display() [io]
+    let buf = Buffer.new()
+    let m = two_bars()
+
+    match progmulti.draw_all_if_due(buf, m, m, progdraw.term(), progdraw.tick(), 0.0)
+        Err(e)   => test.assert(e.message() != "")
+        Ok(next) => test.assert(progmulti.line_count(next) == 2)
+
+@test
+fn test_finishing_and_clearing_leave_the_screen_usable() [io]
+    let buf = Buffer.new()
+
+    test.case("finishing writes the final lines")
+    match progmulti.finish_all_to(buf, two_bars(), progdraw.term(), 1.0)
+        Some(e) => test.assert(e.message() != "")
+        None    => test.assert(true)
+
+    test.case("and clearing erases them")
+    match progmulti.clear_all_to(buf, two_bars(), progdraw.term())
+        Some(e) => test.assert(e.message() != "")
+        None    => test.assert(true)
