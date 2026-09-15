@@ -1,6 +1,6 @@
 [package]
 name        = "progress-nv"
-version     = "0.0.1"
+version     = "0.0.2"
 description = "Progress bars and spinners that take the writer rather than printing: a ProgState is a value, rendering it is a pure function, the clock and the terminal width arrive as arguments, and the only effectful functions are the ones that hand bytes to a caller's Write.  The redraw rate is a value, a non-TTY writer gets milestone lines instead of escape sequences, and the width is counted in CELLS through unicode-nv.  Interface only — every body is a todo()."
 license     = "Apache-2.0"
 
