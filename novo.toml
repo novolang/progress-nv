@@ -1,6 +1,6 @@
 [package]
 name        = "progress-nv"
-version     = "0.0.2"
+version     = "0.0.3"
 description = "Progress bars and spinners that take the writer rather than printing: a ProgState is a value, rendering it is a pure function, the clock and the terminal width arrive as arguments, and the only effectful functions are the ones that hand bytes to a caller's Write.  The redraw rate is a value, a non-TTY writer gets milestone lines instead of escape sequences, and the width is counted in CELLS through unicode-nv.  Interface only — every body is a todo()."
 license     = "Apache-2.0"
 
@@ -48,7 +48,7 @@ novo        = ">= 0.8.9"
 # to say `~` — are already made there.  A bar that formatted its own
 # durations would disagree with every other tool in the ecosystem after
 # about a week.  `core`.
-humantime-nv = "^0.0.1"
+humantime-nv = "^0.1.0"
 
 # The width, in CELLS.
 #
@@ -58,14 +58,14 @@ humantime-nv = "^0.0.1"
 # measured and truncated with — the same arrangement table-nv uses, so
 # a bar and a table on the same terminal cannot come to different
 # answers.  `core`.
-unicode-nv = "^0.0.1"
+unicode-nv = "^0.1.3"
 
 # The `WrapWidth` itself, and the truncation of a message that does not
 # fit.
 #
 # One rule shared with table-nv rather than a measure of this package's
 # own.  `core`.
-textwrap-nv = "^0.0.1"
+textwrap-nv = "^0.1.2"
 
 # The redraw: moving the cursor up, erasing a line, and the state
 # machine that says an escape sequence costs no width.
@@ -73,4 +73,4 @@ textwrap-nv = "^0.0.1"
 # `seqwrite` writes the sequences into a caller's buffer, which is
 # exactly the shape the draw functions here need, and `vtparse` is how a
 # coloured message is measured without a regular expression.  `core`.
-ansi-nv = "^0.0.1"
+ansi-nv = "^0.2.2"

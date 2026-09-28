@@ -3,34 +3,34 @@
 [ansi-nv]
 source = "registry"
 url = "https://registry.novo-lang.org"
-req = "^0.0.1"
-version = "0.0.1"
-hash = "baa15b4cfde5aca61c11beeb110d62f4b8b9b0916c93f582301a8a0b43079817"
+req = "^0.2.2"
+version = "0.2.2"
+hash = "21a32699485d5fe48ab52b7a4db3301fdc764ee9064f83b4fd457ee62f8792d0"
 
 [calendar-nv]
 source = "registry"
 url = "https://registry.novo-lang.org"
-req = "^0.0.2"
-version = "0.0.2"
-hash = "96409f46f3946d4b40437754edc7e8a6f044521cfe286f5723ff10205a581f48"
+req = "^0.2.0"
+version = "0.2.1"
+hash = "c81b54f47ee0efd44548a81c1427880e4a001e3133333b268b8d331ccd480e42"
 
 [humantime-nv]
 source = "registry"
 url = "https://registry.novo-lang.org"
-req = "^0.0.1"
-version = "0.0.1"
-hash = "340f5b8b74aa06d5508d230cd2a214664db85556551bf526a53d94fb968a67f8"
+req = "^0.1.0"
+version = "0.1.0"
+hash = "1dd159e82e4c81bddaf2500aea51fba343b344ff9d6fc8df5d49395b5bfcd3fb"
 
 [textwrap-nv]
 source = "registry"
 url = "https://registry.novo-lang.org"
-req = "^0.0.1"
-version = "0.0.1"
-hash = "42ec18b29d59808bf0f659f39daf4c09223d7da379276136900db8c4aa236a7b"
+req = "^0.1.2"
+version = "0.1.2"
+hash = "c5dc8b93f28d600ae78a140fd486b366eea0791154a7c0da9ab3b886463cac47"
 
 [unicode-nv]
 source = "registry"
 url = "https://registry.novo-lang.org"
-req = "^0.0.1"
-version = "0.0.1"
-hash = "e72dc94d06a8697b2c1451d058f53579777b9c5e5c43559e0b8ec3d1ab50d9b8"
+req = "^0.1.0,^0.1.3"
+version = "0.1.3"
+hash = "bb136fc5a87b6306b006781512a2b65ec4b0d8b86d4016ba7d94ee089ea2c120"
